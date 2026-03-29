@@ -274,14 +274,9 @@ const canvas  = document.getElementById('canvas');
 const ctx     = canvas.getContext('2d');
 const video   = document.getElementById('video');
 
-let W, H;
-function resize() {
-  W = canvas.width  = window.innerWidth;
-  H = canvas.height = window.innerHeight;
-  redrawInk();
-}
-window.addEventListener('resize', resize);
-resize();
+// ── Ink layer (offscreen) — must be before resize() ───────────────────────────
+const inkCanvas = document.createElement('canvas');
+const inkCtx    = inkCanvas.getContext('2d');
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let drawColor  = '#00e5ff';
@@ -305,9 +300,14 @@ let fpsArr = [], lastT = performance.now();
 // Trail for cursor glow
 const trail = [];
 
-// ── Ink layer (offscreen) ──────────────────────────────────────────────────────
-const inkCanvas = document.createElement('canvas');
-const inkCtx    = inkCanvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  redrawInk();
+}
+window.addEventListener('resize', resize);
+resize();
 function resizeInk() {
   inkCanvas.width  = W;
   inkCanvas.height = H;
