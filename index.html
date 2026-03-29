@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>HandCanvas</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --cyan: #00e5ff;
+    --green: #39ff8a;
+    --magenta: #ff2d78;
+    --gold: #ffd000;
+    --violet: #c87aff;
+    --draw-color: #00e5ff;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: #000;
+    overflow: hidden;
+    font-family: 'Space Mono', monospace;
+    touch-action: none;
+  }
+
+  /* ── Hidden video ── */
+  #video {
+    position: absolute;
+    width: 1px; height: 1px;
+    opacity: 0; pointer-events: none;
+  }
+
+  /* ── Main canvas ── */
+  #canvas {
+    display: block;
+    width: 100vw; height: 100vh;
+    cursor: none;
+  }
+
+  /* ── Overlay UI ── */
+  #ui {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  /* Corner brackets */
+  .bracket {
+    position: absolute;
+    width: 28px; height: 28px;
+    border-color: rgba(0,229,255,0.5);
+    border-style: solid;
+  }
+  .bracket.tl { top:14px; left:14px; border-width:2px 0 0 2px; }
+  .bracket.tr { top:14px; right:14px; border-width:2px 2px 0 0; }
+  .bracket.bl { bottom:14px; left:14px; border-width:0 0 2px 2px; }
+  .bracket.br { bottom:14px; right:14px; border-width:0 2px 2px 0; }
+
+  /* Gesture badge */
+  #badge {
+    position: absolute;
+    top: 18px; left: 50%;
+    transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(0,0,0,0.7);
+    border: 1px solid rgba(0,229,255,0.25);
+    border-radius: 40px;
+    padding: 7px 18px;
+    backdrop-filter: blur(8px);
+    transition: border-color 0.2s;
+  }
+  #badge-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #444;
+    transition: background 0.15s;
+    flex-shrink: 0;
+  }
+  #badge-text {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px; letter-spacing: 0.12em;
+    color: rgba(255,255,255,0.6);
+    transition: color 0.15s;
+    text-transform: uppercase;
+  }
+
+  /* FPS */
+  #fps {
+    position: absolute;
+    top: 22px; right: 22px;
+    font-size: 11px; letter-spacing: 0.08em;
+    color: rgba(0,229,255,0.4);
+  }
+
+  /* Palette strip */
+  #palette {
+    position: absolute;
+    bottom: 22px; left: 50%;
+    transform: translateX(-50%);
+    display: flex; gap: 10px;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 40px;
+    padding: 8px 16px;
+    backdrop-filter: blur(8px);
+    pointer-events: all;
+  }
+  .pal-btn {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: transform 0.15s, border-color 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .pal-btn:hover { transform: scale(1.25); }
+  .pal-btn.active { border-color: #fff; transform: scale(1.2); }
+
+  /* Controls */
+  #controls {
+    position: absolute;
+    bottom: 22px; right: 18px;
+    display: flex; flex-direction: column; gap: 8px;
+    pointer-events: all;
+  }
+  .ctrl-btn {
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(0,0,0,0.6);
+    color: rgba(255,255,255,0.6);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px; letter-spacing: 0.05em;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(8px);
+    transition: border-color 0.15s, color 0.15s, transform 0.1s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .ctrl-btn:hover { border-color: rgba(0,229,255,0.5); color: var(--cyan); }
+  .ctrl-btn:active { transform: scale(0.92); }
+
+  /* Help hints */
+  #hints {
+    position: absolute;
+    bottom: 76px; left: 18px;
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .hint {
+    font-size: 10px; letter-spacing: 0.06em;
+    color: rgba(255,255,255,0.2);
+    text-transform: uppercase;
+  }
+
+  /* Loading screen */
+  #loading {
+    position: fixed; inset: 0;
+    background: #000;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 20px;
+    z-index: 100;
+    transition: opacity 0.6s;
+  }
+  #loading.hidden { opacity: 0; pointer-events: none; }
+  .load-title {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(32px, 8vw, 64px);
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -0.02em;
+  }
+  .load-title span { color: var(--cyan); }
+  .load-sub {
+    font-size: 11px; letter-spacing: 0.15em;
+    color: rgba(255,255,255,0.3);
+    text-transform: uppercase;
+  }
+  .load-bar-wrap {
+    width: 200px; height: 2px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px; overflow: hidden;
+  }
+  .load-bar {
+    height: 100%;
+    background: var(--cyan);
+    border-radius: 2px;
+    width: 0;
+    transition: width 0.4s ease;
+  }
+  .load-msg {
+    font-size: 11px; letter-spacing: 0.1em;
+    color: rgba(0,229,255,0.5);
+    min-height: 16px;
+    text-transform: uppercase;
+  }
+
+  /* Permission error */
+  #perm-error {
+    display: none;
+    position: fixed; inset: 0;
+    background: #000;
+    align-items: center; justify-content: center;
+    flex-direction: column; gap: 16px;
+    z-index: 200;
+  }
+  #perm-error.show { display: flex; }
+  .perm-title { font-family: 'Syne',sans-serif; font-size:24px; font-weight:700; color:#fff; }
+  .perm-sub { font-size:13px; color:rgba(255,255,255,0.4); text-align:center; max-width:280px; line-height:1.6; }
+</style>
+</head>
+<body>
+
+<video id="video" playsinline autoplay muted></video>
+<canvas id="canvas"></canvas>
+
+<div id="ui">
+  <div class="bracket tl"></div>
+  <div class="bracket tr"></div>
+  <div class="bracket bl"></div>
+  <div class="bracket br"></div>
+
+  <div id="badge">
+    <div id="badge-dot"></div>
+    <span id="badge-text">initialising</span>
+  </div>
+
+  <div id="fps">-- fps</div>
+
+  <div id="hints">
+    <div class="hint">☝ index up → draw</div>
+    <div class="hint">✊ fist → move</div>
+  </div>
+
+  <div id="palette">
+    <div class="pal-btn active" data-color="#00e5ff" style="background:#00e5ff"></div>
+    <div class="pal-btn" data-color="#ff2d78" style="background:#ff2d78"></div>
+    <div class="pal-btn" data-color="#39ff8a" style="background:#39ff8a"></div>
+    <div class="pal-btn" data-color="#ffd000" style="background:#ffd000"></div>
+    <div class="pal-btn" data-color="#c87aff" style="background:#c87aff"></div>
+    <div class="pal-btn" data-color="#ff7b00" style="background:#ff7b00"></div>
+  </div>
+
+  <div id="controls">
+    <button class="ctrl-btn" id="btn-clear" title="Clear">CLR</button>
+    <button class="ctrl-btn" id="btn-undo" title="Undo">↩</button>
+  </div>
+</div>
+
+<div id="loading">
+  <div class="load-title">Hand<span>Canvas</span></div>
+  <div class="load-sub">gesture drawing · zero install</div>
+  <div class="load-bar-wrap"><div class="load-bar" id="load-bar"></div></div>
+  <div class="load-msg" id="load-msg">loading mediapipe…</div>
+</div>
+
+<div id="perm-error">
+  <div class="perm-title">Camera required</div>
+  <div class="perm-sub">Please allow camera access and reload the page. This app never sends video anywhere — processing is 100% local.</div>
+</div>
+
+<!-- MediaPipe via CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<script>
+'use strict';
+
+// ── Canvas setup ──────────────────────────────────────────────────────────────
+const canvas  = document.getElementById('canvas');
+const ctx     = canvas.getContext('2d');
+const video   = document.getElementById('video');
+
+let W, H;
+function resize() {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  redrawInk();
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let drawColor  = '#00e5ff';
+let gesture    = 'IDLE';
+let prevPt     = null;
+let smoothX    = 0, smoothY = 0;
+const ALPHA    = 0.5;
+
+// Ink stored as strokes for undo + move
+let strokes    = [];     // [{color, pts:[{x,y}]}]
+let activeStroke = null;
+
+// Move state
+let fistAnchor  = null;   // {wx,wy} wrist when fist closed
+let moveOffsetX = 0, moveOffsetY = 0;
+let tempOffX    = 0, tempOffY = 0;
+
+// FPS
+let fpsArr = [], lastT = performance.now();
+
+// Trail for cursor glow
+const trail = [];
+
+// ── Ink layer (offscreen) ──────────────────────────────────────────────────────
+const inkCanvas = document.createElement('canvas');
+const inkCtx    = inkCanvas.getContext('2d');
+function resizeInk() {
+  inkCanvas.width  = W;
+  inkCanvas.height = H;
+}
+
+function redrawInk() {
+  resizeInk();
+  inkCtx.clearRect(0, 0, W, H);
+  inkCtx.save();
+  inkCtx.translate(moveOffsetX + tempOffX, moveOffsetY + tempOffY);
+  for (const s of strokes) {
+    if (s.pts.length < 2) continue;
+    inkCtx.strokeStyle = s.color;
+    inkCtx.lineWidth   = 3;
+    inkCtx.lineCap     = 'round';
+    inkCtx.lineJoin    = 'round';
+    inkCtx.shadowColor = s.color;
+    inkCtx.shadowBlur  = 14;
+    inkCtx.beginPath();
+    inkCtx.moveTo(s.pts[0].x, s.pts[0].y);
+    for (let i = 1; i < s.pts.length; i++) {
+      const mp = {x:(s.pts[i-1].x+s.pts[i].x)/2, y:(s.pts[i-1].y+s.pts[i].y)/2};
+      inkCtx.quadraticCurveTo(s.pts[i-1].x, s.pts[i-1].y, mp.x, mp.y);
+    }
+    inkCtx.stroke();
+    inkCtx.shadowBlur = 0;
+  }
+  inkCtx.restore();
+}
+
+// ── Gesture detection ──────────────────────────────────────────────────────────
+function detectGesture(lm) {
+  const indexUp  = lm[8].y  < lm[6].y;
+  const middleDn = lm[12].y > lm[10].y;
+  const ringDn   = lm[16].y > lm[14].y;
+  const pinkyDn  = lm[20].y > lm[18].y;
+
+  const allFolded = lm[8].y>lm[6].y && lm[12].y>lm[10].y && lm[16].y>lm[14].y && lm[20].y>lm[18].y;
+  if (allFolded) return 'FIST';
+  if (indexUp && middleDn && ringDn && pinkyDn) return 'DRAW';
+
+  const allUp = lm[8].y<lm[6].y && lm[12].y<lm[10].y && lm[16].y<lm[14].y && lm[20].y<lm[18].y;
+  if (allUp) return 'OPEN';
+  return 'IDLE';
+}
+
+// ── Smooth ─────────────────────────────────────────────────────────────────────
+function smooth(rx, ry) {
+  smoothX = ALPHA*rx + (1-ALPHA)*smoothX;
+  smoothY = ALPHA*ry + (1-ALPHA)*smoothY;
+  return {x: smoothX, y: smoothY};
+}
+
+// ── Badge UI ──────────────────────────────────────────────────────────────────
+const badge     = document.getElementById('badge');
+const badgeDot  = document.getElementById('badge-dot');
+const badgeTxt  = document.getElementById('badge-text');
+const fpsEl     = document.getElementById('fps');
+
+const GESTURE_STYLE = {
+  DRAW: { dot:'#00e5ff', text:'rgba(0,229,255,0.9)',  border:'rgba(0,229,255,0.4)',  label:'draw mode' },
+  FIST: { dot:'#39ff8a', text:'rgba(57,255,138,0.9)', border:'rgba(57,255,138,0.4)', label:'move mode' },
+  OPEN: { dot:'#888',    text:'rgba(255,255,255,0.4)', border:'rgba(255,255,255,0.1)', label:'open hand' },
+  IDLE: { dot:'#333',    text:'rgba(255,255,255,0.25)', border:'rgba(255,255,255,0.08)', label:'no hand' },
+};
+function updateBadge(g) {
+  const s = GESTURE_STYLE[g] || GESTURE_STYLE.IDLE;
+  badgeDot.style.background  = s.dot;
+  badgeTxt.style.color       = s.text;
+  badgeTxt.textContent       = s.label;
+  badge.style.borderColor    = s.border;
+}
+
+// ── Main render loop ───────────────────────────────────────────────────────────
+let lmData = null; // latest landmarks from MP
+
+function render() {
+  requestAnimationFrame(render);
+
+  // FPS
+  const now = performance.now();
+  const dt  = now - lastT; lastT = now;
+  fpsArr.push(1000/dt);
+  if (fpsArr.length > 30) fpsArr.shift();
+  const fps = fpsArr.reduce((a,b)=>a+b,0)/fpsArr.length;
+  fpsEl.textContent = fps.toFixed(0)+' fps';
+
+  // Black bg
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  ctx.lineWidth   = 1;
+  const gs = 60;
+  for (let x=0; x<W; x+=gs) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y=0; y<H; y+=gs) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+  // Ink layer
+  ctx.drawImage(inkCanvas, 0, 0);
+
+  if (!lmData) { updateBadge('IDLE'); return; }
+
+  const lm = lmData;
+  const g  = detectGesture(lm);
+  if (g !== gesture) { gesture = g; updateBadge(g); }
+
+  // Fingertip (index) in screen coords — mirrored already by MP
+  const tipRaw = { x: lm[8].x * W, y: lm[8].y * H };
+  const tip    = smooth(tipRaw.x, tipRaw.y);
+  const wrist  = { x: lm[0].x * W, y: lm[0].y * H };
+
+  // Trail
+  trail.push({...tip});
+  if (trail.length > 10) trail.shift();
+
+  // ── DRAW ──────────────────────────────────────────────────────────────────
+  if (g === 'DRAW') {
+    fistAnchor = null; tempOffX = 0; tempOffY = 0;
+
+    if (!activeStroke) {
+      activeStroke = { color: drawColor, pts: [tip] };
+      strokes.push(activeStroke);
+    } else {
+      activeStroke.pts.push(tip);
+      // Incremental draw on ink layer
+      const pts = activeStroke.pts;
+      if (pts.length >= 2) {
+        inkCtx.save();
+        inkCtx.translate(moveOffsetX, moveOffsetY);
+        inkCtx.strokeStyle = drawColor;
+        inkCtx.lineWidth   = 3;
+        inkCtx.lineCap     = 'round';
+        inkCtx.lineJoin    = 'round';
+        inkCtx.shadowColor = drawColor;
+        inkCtx.shadowBlur  = 16;
+        inkCtx.beginPath();
+        const a = pts[pts.length-2], b = pts[pts.length-1];
+        const mp = {x:(a.x+b.x)/2, y:(a.y+b.y)/2};
+        inkCtx.moveTo(a.x, a.y);
+        inkCtx.quadraticCurveTo(a.x, a.y, mp.x, mp.y);
+        inkCtx.stroke();
+        inkCtx.shadowBlur = 0;
+        inkCtx.restore();
+      }
+    }
+
+    // Cursor ring
+    ctx.beginPath();
+    ctx.arc(tip.x, tip.y, 14, 0, Math.PI*2);
+    ctx.strokeStyle = drawColor;
+    ctx.lineWidth   = 1.5;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(tip.x, tip.y, 4, 0, Math.PI*2);
+    ctx.fillStyle = drawColor;
+    ctx.fill();
+
+  // ── FIST / MOVE ───────────────────────────────────────────────────────────
+  } else if (g === 'FIST') {
+    activeStroke = null;
+    if (!fistAnchor) { fistAnchor = {wx: wrist.x, wy: wrist.y}; }
+    tempOffX = wrist.x - fistAnchor.wx;
+    tempOffY = wrist.y - fistAnchor.wy;
+    redrawInk(); // re-render with temp offset
+    // Re-draw on main canvas
+    ctx.drawImage(inkCanvas, 0, 0);
+
+    // Move cursor
+    ctx.beginPath();
+    ctx.arc(tip.x, tip.y, 18, 0, Math.PI*2);
+    ctx.strokeStyle = '#39ff8a';
+    ctx.lineWidth   = 1.5;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(tip.x, tip.y, 6, 0, Math.PI*2);
+    ctx.fillStyle = '#39ff8a';
+    ctx.fill();
+
+  } else {
+    // Commit move offset on gesture release
+    if (fistAnchor && (tempOffX || tempOffY)) {
+      moveOffsetX += tempOffX;
+      moveOffsetY += tempOffY;
+      tempOffX = 0; tempOffY = 0;
+      fistAnchor = null;
+      redrawInk();
+    }
+    activeStroke = null;
+    fistAnchor   = null;
+  }
+
+  // ── Skeleton ──────────────────────────────────────────────────────────────
+  const CONNS = [
+    [0,1],[1,2],[2,3],[3,4],
+    [0,5],[5,6],[6,7],[7,8],
+    [0,9],[9,10],[10,11],[11,12],
+    [0,13],[13,14],[14,15],[15,16],
+    [0,17],[17,18],[18,19],[19,20],
+    [5,9],[9,13],[13,17]
+  ];
+  ctx.strokeStyle = 'rgba(0,229,255,0.18)';
+  ctx.lineWidth   = 1;
+  for (const [a,b] of CONNS) {
+    ctx.beginPath();
+    ctx.moveTo(lm[a].x*W, lm[a].y*H);
+    ctx.lineTo(lm[b].x*W, lm[b].y*H);
+    ctx.stroke();
+  }
+
+  // Nodes
+  const KEY_NODES = [0,4,8,12,16,20];
+  for (let i=0; i<21; i++) {
+    const px = lm[i].x*W, py = lm[i].y*H;
+    const isKey = KEY_NODES.includes(i);
+    ctx.beginPath();
+    ctx.arc(px, py, isKey ? 5 : 3, 0, Math.PI*2);
+    ctx.fillStyle = i===8 ? drawColor : isKey ? 'rgba(0,229,255,0.8)' : 'rgba(0,229,255,0.3)';
+    ctx.fill();
+  }
+
+  // Trail glow
+  for (let i=0; i<trail.length; i++) {
+    const a = (i+1)/trail.length;
+    ctx.beginPath();
+    ctx.arc(trail[i].x, trail[i].y, 3*a, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(0,229,255,${a*0.4})`;
+    ctx.fill();
+  }
+}
+
+// ── MediaPipe Hands ────────────────────────────────────────────────────────────
+const hands = new Hands({locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+hands.setOptions({
+  maxNumHands: 1,
+  modelComplexity: 0,
+  minDetectionConfidence: 0.7,
+  minTrackingConfidence: 0.6,
+  selfieMode: true,
+});
+hands.onResults(results => {
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    lmData = results.multiHandLandmarks[0];
+  } else {
+    lmData = null;
+    activeStroke = null;
+  }
+});
+
+// ── Loading progress ───────────────────────────────────────────────────────────
+const loadBar = document.getElementById('load-bar');
+const loadMsg = document.getElementById('load-msg');
+const loading = document.getElementById('loading');
+
+function setLoad(pct, msg) {
+  loadBar.style.width = pct + '%';
+  loadMsg.textContent = msg;
+}
+
+// ── Camera ─────────────────────────────────────────────────────────────────────
+async function startCamera() {
+  setLoad(20, 'requesting camera…');
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode:'user', width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:60} },
+      audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+  } catch(e) {
+    document.getElementById('perm-error').classList.add('show');
+    loading.classList.add('hidden');
+    return;
+  }
+
+  setLoad(50, 'loading hand model…');
+
+  const camera = new Camera(video, {
+    onFrame: async () => { await hands.send({image: video}); },
+    width: 1280, height: 720
+  });
+
+  setLoad(80, 'warming up…');
+  await camera.start();
+
+  setLoad(100, 'ready');
+  setTimeout(() => loading.classList.add('hidden'), 600);
+
+  render();
+}
+
+// ── Palette ────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.pal-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.pal-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    drawColor = btn.dataset.color;
+    document.documentElement.style.setProperty('--draw-color', drawColor);
+  });
+  btn.addEventListener('touchstart', e => { e.preventDefault(); btn.click(); }, {passive:false});
+});
+
+// ── Controls ───────────────────────────────────────────────────────────────────
+document.getElementById('btn-clear').addEventListener('click', () => {
+  strokes = []; activeStroke = null;
+  moveOffsetX = 0; moveOffsetY = 0; tempOffX = 0; tempOffY = 0;
+  fistAnchor = null;
+  inkCtx.clearRect(0, 0, W, H);
+});
+document.getElementById('btn-undo').addEventListener('click', () => {
+  if (strokes.length) { strokes.pop(); redrawInk(); }
+});
+
+// Keyboard shortcuts
+window.addEventListener('keydown', e => {
+  if (e.key === 'c' || e.key === 'C') document.getElementById('btn-clear').click();
+  if (e.key === 'z' && (e.ctrlKey||e.metaKey)) document.getElementById('btn-undo').click();
+});
+
+// ── Boot ───────────────────────────────────────────────────────────────────────
+startCamera();
+</script>
+</body>
+</html>
